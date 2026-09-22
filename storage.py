@@ -50,7 +50,7 @@ def project_bytes(project):
     return json.dumps(project, indent=2, ensure_ascii=False, allow_nan=False).encode("utf-8")
 
 
-def load_project(data):
+def load_project(data, *, preserve_identity=False):
     try:
         project = json.loads(data)
         if not isinstance(project, dict) or project.get("schema_version") != SCHEMA_VERSION:
@@ -73,13 +73,24 @@ def load_project(data):
         if not isinstance(name, str):
             raise ValueError("项目名称必须为文本。")
         clean = new_project(name)
+        if preserve_identity:
+            clean["project_id"] = uuid.UUID(project["project_id"]).hex
+            clean["updated_at"] = str(project.get("updated_at", clean["updated_at"]))
         clean["created_at"] = str(project.get("created_at", clean["created_at"]))
         clean["settings"] = {key: settings[key] for key in DIMENSIONS}
         clean["measurements"] = records_from_frame(frame_from_records(records))
-        # 打开外部项目创建新的本地副本，避免覆盖同名草稿。
+        # 默认外部导入创建副本；本地恢复保留原 ID，继续保存到同一文件。
         return clean
     except (KeyError, TypeError, json.JSONDecodeError, UnicodeDecodeError) as error:
         raise ValueError("项目文件无效或不完整。") from error
+
+
+def load_draft(path):
+    path = Path(path)
+    project = load_project(path.read_bytes(), preserve_identity=True)
+    if path.stem != project["project_id"]:
+        raise ValueError("草稿文件名与项目 ID 不一致，无法原位恢复。")
+    return project
 
 
 def read_csv(data):
@@ -122,7 +133,7 @@ def list_drafts(directory=None):
     drafts = []
     for path in directory.glob("*.json"):
         try:
-            project = load_project(path.read_bytes())
+            project = load_draft(path)
             drafts.append((path, project["name"]))
         except (OSError, ValueError):
             continue

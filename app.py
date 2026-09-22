@@ -21,11 +21,13 @@ from fitting import (
     records_from_frame,
     validate,
 )
+from page_state import retain_page_state
 from plotting import export_bundle, figures, metric_table
 from storage import (
     compensation_document,
     csv_bytes,
     list_drafts,
+    load_draft,
     load_project,
     new_project,
     project_bytes,
@@ -62,6 +64,7 @@ def replace_table(frame):
 
 def main():
     st.set_page_config(page_title="绿灯残差标定", page_icon="📐", layout="wide")
+    entered = retain_page_state("calibration")
     st.markdown(
         """<style>
     .block-container {padding-top:2rem;max-width:1600px}
@@ -71,9 +74,15 @@ def main():
     )
     if "project" not in st.session_state:
         open_in_session(new_project())
+    elif entered:
+        # data_editor deltas cannot be assigned via session_state. Recreate it
+        # from the last committed records when returning from another page.
+        st.session_state.editor_base = frame_from_records(st.session_state.project["measurements"])
+        st.session_state.editor_generation += 1
     state = st.session_state
     st.title("绿灯残差标定")
     st.caption("记录测量 → 比较模型 → 独立验证 → 导出补偿结果")
+    st.page_link("pages/1_话题观测.py", label="话题观测：采集、曲线和均值统计", icon="📈")
 
     with st.sidebar:
         st.header("测量项目")
@@ -101,7 +110,7 @@ def main():
                 )
                 if st.button("恢复所选草稿"):
                     try:
-                        open_in_session(load_project(Path(choice).read_bytes()))
+                        open_in_session(load_draft(choice))
                         st.rerun()
                     except (ValueError, OSError) as error:
                         st.error(str(error))
@@ -220,7 +229,11 @@ def main():
         st.warning(failure)
     results = state.fit_results
     dimension = st.radio(
-        "查看结果", list(results), format_func=lambda key: DIMENSIONS[key][2], horizontal=True
+        "查看结果",
+        list(results),
+        format_func=lambda key: DIMENSIONS[key][2],
+        horizontal=True,
+        key="calibration_view_dimension",
     )
     result = results[dimension]
     st.code(formula(result), language=None)
