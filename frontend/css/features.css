@@ -14,11 +14,11 @@
 }
 
 .parameter-table th:first-child {
-  width: 40px;
+  width: 70px;
 }
 
 .parameter-table th:last-child {
-  width: 35px;
+  width: auto;
 }
 
 .parameter-table input {
@@ -140,3 +140,7 @@
 .cell-input { min-width: 100px; width: 100%; padding: 4px 6px; font: inherit; }
 td.computed { color: #71848b; background: #f5f8f8; }
 td.editable:focus { outline: 2px solid #26988e; outline-offset: -2px; }
+
+.excluded-row td { background: #f1f2f3; color: #89919a; }
+.focused-row { outline: 2px solid #26988e; outline-offset: -2px; }
+#point-details { overflow-wrap: anywhere; }

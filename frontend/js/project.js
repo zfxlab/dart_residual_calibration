@@ -3,9 +3,11 @@ let deletedDatasets = [];
 
 function normalizeProject(project, fallbackName = "未命名项目") {
   const datasets = Array.isArray(project.datasets) ? project.datasets : [];
+  for (const d of datasets) d.excluded = [...excludedRows(d)];
+  const { templates, ...metadata } = project;
   const name = typeof project.name === "string" && project.name.trim() ? project.name.trim() : fallbackName;
   return {
-    ...project, version: 1, name, datasets,
+    ...metadata, version: 1, name, datasets,
     active: datasets.some(d => d.id === project.active) ? project.active : (datasets[0]?.id || null)
   };
 }
@@ -44,7 +46,7 @@ async function deleteDataset(id) {
   if (deletedDatasets.length > 10) deletedDatasets.shift();
   state.datasets.splice(index, 1);
   if (state.active === id) state.active = state.datasets[Math.min(index, state.datasets.length - 1)]?.id || null;
-  selection = null; page = 0; invalidate(); persist(); render(true);
+  activePoint = null; page = 0; invalidate(); persist(); render(true);
   notify("已删除「" + dataset.name + "」。本次会话可通过侧栏撤销，已下载的文件不受影响。");
 }
 
@@ -54,7 +56,7 @@ function undoDelete() {
   if (!entry) return;
   state.datasets.splice(Math.min(entry.index, state.datasets.length), 0, entry.dataset);
   state.active = entry.dataset.id;
-  selection = null; page = 0; invalidate(); persist(); render(true);
+  activePoint = null; page = 0; invalidate(); persist(); render(true);
   notify("已恢复数据集「" + entry.dataset.name + "」。");
 }
 
@@ -66,12 +68,12 @@ async function importProject(project, filename) {
       throw Error("项目数据结构无效。");
     }
   }
-  if (project.templates !== undefined && !Array.isArray(project.templates)) throw Error("模板列表格式无效。");
   const token = revision;
   const datasets = [];
   // Prepare the entire import before changing the current project.
   for (const original of project.datasets) {
     const d = structuredClone(original);
+    d.excluded = [...excludedRows(d)];
     if (d.derived?.length) Object.assign(d, await api("/api/derive", d));
     datasets.push({ ...d, id: crypto.randomUUID() });
   }
@@ -79,12 +81,11 @@ async function importProject(project, filename) {
   const wasEmpty = state.datasets.length === 0;
   if (wasEmpty) state.name = normalizeProject(project, filename.replace(/\.json$/i, "") || "未命名项目").name;
   state.datasets.push(...datasets);
-  state.templates = [...(state.templates || []), ...(project.templates || [])];
   if (datasets.length) {
     const originalActive = project.datasets.findIndex(d => d.id === project.active);
     state.active = datasets[originalActive >= 0 ? originalActive : 0].id;
   }
-  selection = null; page = 0; invalidate(); persist(); renderTemplates(); render(true);
+  activePoint = null; page = 0; invalidate(); persist(); render(true);
 }
 
 function setupProject() {

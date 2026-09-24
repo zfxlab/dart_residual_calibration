@@ -14,14 +14,14 @@ function downsample(rows, field, budget = 2000) {
   }
   return [...selected].sort((a, b) => a - b).map(i => rows[i]);
 }
-async function updateDataset(d, rows = d.rows, definitions = d.derived || [], columns = d.columns) {
+async function updateDataset(d, rows = d.rows, definitions = d.derived || [], columns = d.columns, excluded = d.excluded || []) {
   if (featureBusy) throw Error("正在更新数据，请稍后重试。");
   featureBusy = true;
   const token = revision;
   try {
     const result = definitions.length ? await api("/api/derive", { rows, columns, derived: definitions }) : { rows, columns, derived: definitions };
-    if (token !== revision) throw Error("数据或选区已变化，本次修改未写入，请重试。");
-    Object.assign(d, result); invalidate(); persist();
+    if (token !== revision) throw Error("数据已变化，本次修改未写入，请重试。");
+    Object.assign(d, result, {excluded}); invalidate(); persist();
     if (current() === d) render(true);
   } finally { featureBusy = false; renderDerived(); syncFitFields(); }
 }
@@ -48,12 +48,11 @@ function readParameters() {
   const parameters = {};
   $("parameter-editor").querySelectorAll("[data-parameter]").forEach(row => {
     const c = {};
-    for (const key of ["initial", "lower", "upper"]) {
+    for (const key of ["initial"]) {
       const value = row.querySelector('[data-value="' + key + '"]').value;
       if (value !== "") c[key] = Number(value);
     }
-    c.fixed = row.querySelector('[data-value="fixed"]').checked;
-    if (Object.keys(c).length > 1 || c.fixed) parameters[row.dataset.parameter] = c;
+    if (Object.keys(c).length) parameters[row.dataset.parameter] = c;
   });
   return parameters;
 }
@@ -63,7 +62,7 @@ function fitSettings() {
     model: $("model").value, formula: $("custom-formula").value,
     validation: Number($("validation").value), group: $("fit-group").value,
     weight: $("fit-weight").value, loss: $("fit-loss").value,
-    f_scale: Number($("fit-scale").value), source: $("fit-source").value, parameters: readParameters(),
+    f_scale: Number($("fit-scale").value), parameters: readParameters(),
   };
 }
 function rememberFit() { const d = current(); if (d) { d.fit = fitSettings(); persist(); } }
@@ -76,12 +75,11 @@ async function identifyParameters(config = {}) {
     const result = await api("/api/model", { model, formula });
     if (request !== parameterRequest || current() !== dataset) return;
     if (model !== "custom") $("custom-formula").value = result.formula;
-    $("parameter-editor").innerHTML = '<table class="parameter-table"><thead><tr><th>参数</th><th>初值</th><th>下限</th><th>上限</th><th>固定</th></tr></thead><tbody>' +
+    $("parameter-editor").innerHTML = '<table class="parameter-table"><thead><tr><th>参数</th><th>初值</th></tr></thead><tbody>' +
       result.parameters.map(name => {
         const c = config[name] || {};
         return '<tr data-parameter="' + esc(name) + '"><td>' + esc(name) + "</td>" +
-          ["initial", "lower", "upper"].map(key => '<td><input aria-label="' + esc(name + " " + key) + '" data-value="' + key + '" type="number" step="any" placeholder="' + (key === "initial" ? "自动" : "不限") + '" value="' + esc(c[key] ?? "") + '"></td>').join("") +
-          '<td><input aria-label="' + esc(name) + ' 固定" data-value="fixed" type="checkbox"' + (c.fixed ? " checked" : "") + "></td></tr>";
+          ["initial"].map(key => '<td><input aria-label="' + esc(name + " " + key) + '" data-value="' + key + '" type="number" step="any" placeholder="' + (key === "initial" ? "自动" : "不限") + '" value="' + esc(c[key] ?? "") + '"></td>').join("") + "</tr>";
       }).join("") + "</tbody></table>";
     rememberFit();
   } catch (error) {
@@ -106,7 +104,7 @@ function syncFitFields(reset = false) {
     fitDatasetId = d?.id;
     const config = d?.fit || {};
     $("model").value = config.model || "linear"; $("custom-formula").value = config.formula || "a+b*x";
-    $("validation").value = String(config.validation ?? .2); $("fit-source").value = config.source || "all";
+    $("validation").value = String(config.validation ?? .2);
     $("fit-loss").value = config.loss || "linear"; $("fit-scale").value = config.f_scale ?? 1;
     setOptions("fit-group", d?.columns || [], config.group || "", true);
     setOptions("fit-weight", fields, config.weight || "", true);
@@ -120,7 +118,7 @@ function fitPayload() {
   const d = current(); if (!d) throw Error("请选择数据集。");
   const config = fitSettings();
   if (!d.columns.includes(config.x) || !d.columns.includes(config.y)) throw Error("请选择 X 和 Y 数据列。");
-  return { ...config, rows: config.source === "selection" ? selectedRows().map(item => item.row) : d.rows, columns: d.columns, derived: d.derived || [] };
+  return { ...config, rows: includedRows(d).map(item => item.row), columns: d.columns, derived: d.derived || [] };
 }
 function svgPoints(x, y, mask = null) {
   const rows = x.map((value, i) => ({ row: { x: value, y: y[i] }, index: i })).filter(item => !mask || mask[item.index]);
@@ -156,16 +154,19 @@ async function runFit() {
   } catch (error) { notify(error.message, true); }
   finally { $("fit").disabled = !current(); $("fit").textContent = "执行拟合 ↗"; }
 }
-function renderTemplates() {
-  $("template-choice").innerHTML = '<option value="">选择模板</option>' + (state.templates || []).map((item, i) => '<option value="' + i + '">' + esc(item.name) + "</option>").join("");
-}
 function setupFeatures() {
   $("fit-inspector").prepend($("model-panel"));
   $("fit-main").insertBefore($("fit-result"), $("comparison-panel"));
   $("fit-result").insertAdjacentHTML("beforeend", '<p id="fit-warnings" class="hint"></p><div id="parameter-results" class="table-scroll"></div><p class="hint">95% 区间采用局部线性近似；稳健拟合、参数触及边界或不可识别时不提供。</p>');
   $("formula").insertAdjacentHTML("afterend", '<div id="fit-chart" style="height:360px"></div>');
+  $("point-toggle").onclick = () => { if (activePoint?.id === current()?.id) togglePoint(activePoint.index); };
+  $("point-locate").onclick = () => {
+    if (activePoint?.id !== current()?.id) return;
+    page = Math.floor(activePoint.index / 40); renderRecords();
+    $("table").querySelector('[data-record="' + activePoint.index + '"]')?.scrollIntoView({block:"center", behavior:"smooth"});
+  };
   window.addEventListener("hashchange", () => setView(location.hash.slice(2)));
-  $("go-fit").onclick = () => { $("fit-source").value = "selection"; invalidate(); rememberFit(); setView("fit"); };
+  $("go-fit").onclick = () => { setView("fit"); };
   $("back-data").onclick = () => setView("explore");
   $("save-derived").onclick = async () => {
     try { await saveDerived($("derived-name").value.trim(), $("derived-expression").value.trim(), $("derived-unit").value.trim()); }
@@ -179,23 +180,10 @@ function setupFeatures() {
   $("model").onchange = () => { invalidate(); identifyParameters(); };
   $("identify-parameters").onclick = () => { invalidate(); identifyParameters(readParameters()); };
   $("parameter-editor").onchange = () => { invalidate(); rememberFit(); };
-  for (const id of ["fit-x", "fit-y", "fit-source", "validation", "custom-formula", "fit-group", "fit-weight", "fit-loss", "fit-scale"]) {
+  for (const id of ["fit-x", "fit-y", "validation", "custom-formula", "fit-group", "fit-weight", "fit-loss", "fit-scale"]) {
     $(id).onchange = () => { invalidate(); rememberFit(); };
   }
   $("custom-formula").onchange = () => { invalidate(); identifyParameters(readParameters()); };
-  $("save-template").onclick = async () => {
-    const name = await ask("模板名称"); if (!name) return; const c = fitSettings();
-    state.templates = state.templates || [];
-    state.templates.push({ name, model: c.model, formula: c.formula, parameters: c.parameters, loss: c.loss, f_scale: c.f_scale });
-    persist(); renderTemplates(); notify("已保存函数模板，项目 JSON 也包含这些模板。");
-  };
-  $("load-template").onclick = async () => {
-    const choice = $("template-choice").value; if (choice === "") return;
-    const template = state.templates[Number(choice)];
-    $("model").value = template.model; $("custom-formula").value = template.formula;
-    $("fit-loss").value = template.loss; $("fit-scale").value = template.f_scale;
-    invalidate(); await identifyParameters(template.parameters);
-  };
   $("compare-models").onclick = async () => {
     const token = revision; $("compare-models").disabled = true; $("comparison-table").textContent = "正在比较…";
     try {
@@ -266,9 +254,29 @@ async function deleteTableItem(kind, index) {
       d.rows.map(row => Object.fromEntries(Object.entries(row).filter(([key]) => key !== column)));
     const columns = kind === "column" ? d.columns.filter(c => c !== column) : d.columns;
     const definitions = kind === "column" ? (d.derived || []).filter(item => item.name !== column) : d.derived || [];
-    await updateDataset(d, rows, definitions, columns);
-    selection = null; render(true);
+    const excluded = [...excludedRows(d)].filter(i => kind !== "row" || i !== index).map(i => kind === "row" && i > index ? i - 1 : i);
+    await updateDataset(d, rows, definitions, columns, excluded);
+    activePoint = null; render(true);
     rememberFit();
     notify(kind === "row" ? "已删除记录。" : "已删除字段「" + column + "」。");
   } catch (error) { notify(error.message, true); }
+}
+
+function renderPoint() {
+  const d = current(), index = activePoint && d && activePoint.id === d.id ? activePoint.index : null;
+  const row = index == null ? null : d.rows[index];
+  $("point-panel").hidden = !row;
+  if (!row) return;
+  const excluded = excludedRows(d).has(index), x = $("x-field").value, y = $("y-field").value;
+  $("point-details").textContent = "第 " + (index + 1) + " 条 · " + x + " = " + (row[x] ?? "空") + " · " + y + " = " + (row[y] ?? "空") + (excluded ? " · 已排除" : " · 参与拟合");
+  $("point-toggle").textContent = excluded ? "恢复该点" : "排除该点";
+}
+function togglePoint(index) {
+  if (featureBusy) { notify("数据正在更新，请稍后操作。", true); return; }
+  const d = current(); if (!d || !d.rows[index]) return;
+  const excluded = excludedRows(d);
+  if (excluded.has(index)) excluded.delete(index); else excluded.add(index);
+  d.excluded = [...excluded].sort((a,b) => a-b);
+  activePoint = {id:d.id, index};
+  invalidate(); persist(); render();
 }

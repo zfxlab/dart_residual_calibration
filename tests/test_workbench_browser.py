@@ -25,9 +25,8 @@ async function smokeRun() {
     await smokeWait(()=>$('chart').data?.length);
     await new Promise(r=>setTimeout(r,200));
     if($('stat-rows').textContent!=='240')throw Error('Demo rows missing');
-    $('chart').emit('plotly_selected',{range:{x:[2,6],y:[0,100]},points:[]});
-    if(selectedRows().length!==101)throw Error('Box selection not applied');
-    $('reset-selection').click();
+    for(const id of ['reset-selection','summary','x-min','x-max','filter-field','fit-source','save-template','template-choice']) if($(id))throw Error('Removed control remains: '+id);
+    if($('chart').layout.dragmode!=='zoom')throw Error('Chart still selects boxes');
     setView('fit');
     if(!$('data-page').hidden || $('fit-page').hidden || !$('live-panel').hidden) throw Error('Fit page not separated');
     if($('data-page').contains($('model-panel'))) throw Error('Model controls still in data page');
@@ -49,9 +48,9 @@ async function smokeRun() {
     if(fitResult!==null)throw Error('Stale fit not cleared');
     // Native dialog close events are queued with rendering; do not reopen in the same frame.
     await new Promise(r=>requestAnimationFrame(()=>requestAnimationFrame(r)));
-    $('summarize').click();$('dialog-input').value='Sample 1';$('text-dialog').close('ok');
-    await smokeWait(()=>state.datasets.length===2);
-    if(state.datasets[1].rows[0].sample_count!==240)throw Error('Summary not created');
+    const main=state.active;
+    addDataset('第二数据集',['x','y'],[{x:1,y:2}],'test');
+    state.active=main;render(true);
     await saveDerived('difference','[response]-[input]','m');
     if(Math.abs(current().rows[0].difference-2.5)>1e-8)throw Error('Derived column incorrect');
     const changed=current().rows.map(r=>({...r}));changed[0].input=2;
@@ -64,12 +63,22 @@ async function smokeRun() {
     if(!fitResult || fitResult.model!=='custom')throw Error('Custom expression fit failed');
     if(document.querySelector('#fit-chart .gl-container canvas'))throw Error('WebGL trace created');
     if(document.createElement('canvas').getContext('webgl'))throw Error('WebGL was not disabled');
-    $('save-template').click();$('dialog-input').value='Quadratic residual';$('text-dialog').close('ok');
-    await smokeWait(()=>state.templates?.length===1);
-    $('model').value='linear';await identifyParameters();
-    $('template-choice').value='0';$('load-template').click();
-    await smokeWait(()=>$('model').value==='custom'&&document.querySelector('[data-parameter="c"]'));
-    if($('custom-formula').value!=='a+b*x+c*x**2')throw Error('Template not restored');
+    if(document.querySelector('[data-value="lower"],[data-value="upper"],[data-value="fixed"]'))throw Error('Parameter constraints remain');
+    setView('explore');
+    $('chart').emit('plotly_click',{points:[{customdata:201}]});
+    if(activePoint?.index!==201||page!==5||$('point-panel').hidden)throw Error('Point was not located');
+    $('point-toggle').click();
+    if(!excludedRows().has(201)||fitResult!==null||fitPayload().rows.length!==239)throw Error('Point exclusion did not invalidate fit');
+    await smokeWait(()=>$('chart').data[1]?.customdata.includes(201));
+    setView('fit');await runFit();
+    if(fitResult.train.count+fitResult.validation.count!==239)throw Error('Excluded point reached fit');
+    setView('explore');
+    $('chart').emit('plotly_click',{points:[{customdata:201,curveNumber:1}]});
+    $('point-toggle').click();
+    if(excludedRows().size||fitPayload().rows.length!==240)throw Error('Point restore failed');
+    // Persist one excluded point in the exported/imported project.
+    togglePoint(201);
+    setView('fit');
     $('compare-models').click();
     await smokeWait(()=>$('comparison-table').querySelectorAll('tbody tr').length===7);
     setView('explore');
@@ -107,6 +116,7 @@ async function smokeRun() {
     if(JSON.parse(localStorage.getItem(KEY)).datasets.length!==0)throw Error('Deletion not persisted');
     await importProject(savedProject,'saved.json');
     if(state.name!=='温度实验 A'||state.datasets.length!==count)throw Error('Project import lost identity');
+    if(!excludedRows().has(201)||fitPayload().rows.length!==239)throw Error('Project lost exclusions');
     const importedCount=state.datasets.length;
     await importProject({version:1,name:'另一个项目',datasets:[{id:'old',name:'追加',columns:['x','y'],rows:[{x:1,y:2}]}]},'other.json');
     if(state.name!=='温度实验 A'||state.datasets.length!==importedCount+1)throw Error('Merge overwrote project name');
@@ -142,16 +152,18 @@ async function smokeRun() {
     if(!probe.columns.includes('twice'))throw Error('Cancelled column deletion changed data');
     await removeItem('column',2);
     if(probe.columns.includes('twice')||probe.derived.length||$('fit-y').value==='twice')throw Error('Deleted derived field remained');
-    selection=new Set([1]);renderSelection();
+    togglePoint(2);renderRecords();
     $('table').querySelector('[data-delete-row="1"]').click();
     $('table-delete-dialog').close('delete');
     await smokeWait(()=>probe.rows.length===2);
-    if(probe.rows.some(r=>r.x===1)||selection!==null)throw Error('Filtered row deletion wrong');
+    if(probe.rows.some(r=>r.x===1)||!excludedRows().has(1)||excludedRows().has(2))throw Error('Row deletion did not remap exclusions');
     await removeItem('column',1);
+    if(!excludedRows().has(1))throw Error('Column deletion lost exclusions');
     if(probe.rows.some(r=>Object.hasOwn(r,'y'))||probe.columns.length!==1)throw Error('Column values survived deletion');
     await deleteTableItem('column',0);
     if(probe.columns.length!==1)throw Error('Last field deleted');
     while(probe.rows.length)await removeItem('row',0);
+    if(excludedRows().size)throw Error('Deleted records left stale exclusions');
     $('add-row').click();await smokeWait(()=>probe.rows.length===1);
     const newCell=$('table').querySelector('td.editable');newCell.click();
     const blankEditor=newCell.querySelector('input');blankEditor.value='42';blankEditor.dispatchEvent(new Event('blur'));
@@ -173,7 +185,7 @@ class SmokeHandler(Handler):
 
 @unittest.skipUnless(os.environ.get("RUN_BROWSER_TESTS") == "1", "opt-in Chrome UI test")
 class BrowserTests(unittest.TestCase):
-    def test_data_selection_fit_edit_and_summary(self):
+    def test_point_exclusion_fit_edit_and_project(self):
         with tempfile.TemporaryDirectory(prefix="workbench-chrome-") as profile:
             server = ThreadingHTTPServer(("127.0.0.1", 0), SmokeHandler)
             thread = threading.Thread(target=server.serve_forever, daemon=True)

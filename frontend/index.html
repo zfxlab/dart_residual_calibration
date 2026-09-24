@@ -37,14 +37,14 @@
   <main>
     <header>
       <div class="breadcrumb">工作台 <span>/</span> <b id="view-name">数据探索</b></div>
-      <div class="header-actions"><span id="save-status">就绪</span><button id="export-csv" class="button">↓ 导出
+      <div class="header-actions"><span id="save-status">就绪</span><button id="export-csv" class="button" title="导出全部记录，含已排除记录；排除状态请保存项目 JSON">↓ 导出
           CSV</button></div>
     </header>
     <section class="page-heading">
       <div>
         <div class="eyebrow teal">EXPERIMENT & DISCOVERY</div>
         <h1 id="title">让数据呈现规律。</h1>
-        <p id="subtitle">导入、观察、选取与拟合，在同一个工作空间完成。</p>
+        <p id="subtitle">导入、观察、编辑与拟合，在同一个工作空间完成。</p>
       </div><button id="rename" class="button">重命名数据集</button>
     </section>
     <div id="notice" role="status" hidden></div>
@@ -52,8 +52,7 @@
       <article><span>当前数据集</span><strong id="stat-name">—</strong><small id="stat-source">等待导入</small></article>
       <article><span>记录数</span><strong id="stat-rows">0</strong><small>完整原始记录</small></article>
       <article><span>数值字段</span><strong id="stat-fields">0</strong><small>自由选择 X / Y</small></article>
-      <article><span>当前选区</span><strong id="stat-selected">0</strong><small id="stat-selection-note">全部记录</small>
-      </article>
+      <article><span>已排除</span><strong id="stat-excluded">0</strong><small>保留记录，不参与拟合</small></article>
     </section>
     <section id="capture-panel" class="card" hidden>
       <div class="card-heading">
@@ -69,7 +68,7 @@
       <div class="toolbar"><button id="start-capture" class="button primary">● 开始采集</button><button id="stop-capture"
           class="button" disabled>停止</button><button id="keep-capture" class="button">保存为数据集</button><span
           id="capture-count" class="muted">0 条消息</span></div>
-      <p class="hint">启动前加载 ROS 与消息工作区。展开嵌套标量字段；数组暂不采集。保存数据集后可自由筛选、绘图和拟合。</p>
+      <p class="hint">启动前加载 ROS 与消息工作区。展开嵌套标量字段；数组暂不采集。保存数据集后可编辑、绘图和拟合。</p>
       <pre id="capture-log"></pre>
     </section>
     <section id="live-panel" class="card" hidden>
@@ -87,9 +86,9 @@
           <div class="card-heading">
             <div>
               <h2>数据记录 <span id="table-count" class="badge">0</span></h2>
-              <p>当前选区 · 单击编辑，Enter 或离开单元格保存，Esc 取消；派生列只读</p>
+              <p>单击编辑，Enter 或离开单元格保存，Esc 取消；派生列只读</p>
             </div>
-            <div class="toolbar"><button id="go-fit" class="button small">选区送去拟合 →</button><button id="add-column"
+            <div class="toolbar"><button id="go-fit" class="button small">前往拟合 →</button><button id="add-column"
                 class="button small">＋ 字段</button><button id="add-row" class="button small">＋ 记录</button></div>
           </div>
           <div id="table" class="table-scroll"></div>
@@ -104,16 +103,19 @@
               <h2 id="chart-title">变量关系</h2>
               <p id="chart-description">选择字段，探索数据之间的联系</p>
             </div>
-            <div class="toolbar"><span class="legend-dot"></span><span class="muted" id="chart-label">原始数据</span><button
-                id="reset-selection" class="button small">重置选区</button></div>
+            <div class="toolbar"><span class="legend-dot"></span><span class="muted" id="chart-label">原始数据</span></div>
           </div>
           <div id="empty"><span class="empty-symbol">∿</span>
             <h2>从一份数据开始</h2>
-            <p>导入 CSV、手工建立数据表，或连接 ROS 话题。<br>也可以载入示例，体验选区与函数拟合。</p><button id="empty-demo" class="button primary">探索示例数据
+            <p>导入 CSV、手工建立数据表，或连接 ROS 话题。<br>也可以载入示例，体验单点操作与函数拟合。</p><button id="empty-demo" class="button primary">探索示例数据
               ↗</button>
           </div>
           <div id="chart"></div>
-          <div class="chart-footer"><span id="chart-footnote">拖动框选数据，选区会同步到统计、记录和拟合。</span><span
+          <div id="point-panel" class="control-body" hidden>
+            <p id="point-details"></p>
+            <div class="toolbar"><button id="point-toggle" class="button">排除该点</button><button id="point-locate" class="button">定位到记录</button></div>
+          </div>
+          <div class="chart-footer"><span id="chart-footnote">单击散点或折线上的点，定位并排除 / 恢复记录。</span><span
               id="chart-points"></span></div>
         </article>
         <article id="fit-result" class="card" hidden>
@@ -153,13 +155,7 @@
                 <option value="histogram">Y 分布直方图</option>
                 <option value="box">Y 箱线图</option>
               </select></label>
-            <div class="divider"></div>
-            <div class="section-label">范围与质量筛选</div>
-            <div class="two"><label>X 最小值<input id="x-min" type="number" placeholder="不限"></label><label>X 最大值<input
-                  id="x-max" type="number" placeholder="不限"></label></div><label>等值筛选字段<select id="filter-field">
-                <option value="">不筛选</option>
-              </select></label><label>匹配值<input id="filter-value" placeholder="例如 status = 1 时输入 1"></label>
-            <p class="hint">筛选作用于统计与拟合，原始记录完整保留。</p><button id="summarize" class="button wide">＋ 将选区均值保存为记录</button>
+
           </div>
         </article>
         <article id="model-panel" class="card">
@@ -203,12 +199,7 @@
               <span>↗</span></button>
           </div>
         </article>
-        <article class="card">
-          <div class="card-heading">
-            <h2>选区统计</h2><span class="badge" id="summary-field">Y</span>
-          </div>
-          <dl id="summary"></dl>
-        </article>
+
       </aside>
     </section>
     <section id="fit-page" class="workspace" hidden>
@@ -218,10 +209,7 @@
             <h2>拟合数据与变量</h2><span id="fit-dataset-label" class="badge"></span>
           </div>
           <div class="control-body">
-            <label>数据范围<select id="fit-source">
-                <option value="all">整个当前数据集</option>
-                <option value="selection">数据探索页当前选区与筛选</option>
-              </select></label>
+            <p class="hint">使用当前数据集的全部未排除记录；排除状态在数据探索页管理。</p>
             <div class="two"><label>X 数据列<select id="fit-x"></select></label><label>Y 数据列<select id="fit-y"></select></label></div>
             <div class="toolbar"><button id="back-data" class="button small">← 编辑数据 / 派生列</button></div>
             <p class="hint">直接选择数据探索页的原始列或派生列。需要加减、单位换算等操作时，请先在数据探索页生成派生列。</p>
@@ -238,20 +226,10 @@
             <h2>模型比较</h2><button id="compare-models" class="button small">比较七种基础模型</button>
           </div>
           <div id="comparison-table" class="table-scroll"></div>
-          <p class="hint">各模型使用同一选区、划分、权重和损失；独立估计参数，不自动替换当前模型。</p>
+          <p class="hint">各模型使用同一组未排除记录、划分、权重和损失；独立估计参数，不自动替换当前模型。</p>
         </article>
       </div>
-      <aside id="fit-inspector" class="inspector">
-        <article class="card">
-          <div class="card-heading">
-            <h2>函数模板</h2>
-          </div>
-          <div class="control-body"><select id="template-choice"></select>
-            <div class="toolbar"><button id="save-template" class="button small">保存当前模板</button><button
-                id="load-template" class="button small">载入模板</button></div>
-          </div>
-        </article>
-      </aside>
+      <aside id="fit-inspector" class="inspector"></aside>
     </section>
     <footer>DATA WORKBENCH <span>观察 · 记录 · 发现</span></footer>
   </main>
