@@ -5,7 +5,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
-from topic_data import assign_segment, summarize
+from backend.capture.data import assign_segment, summarize
 
 
 class StatisticsTests(unittest.TestCase):

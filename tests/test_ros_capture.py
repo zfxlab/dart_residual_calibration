@@ -9,8 +9,8 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
-from topic_capture import Capture
-from topic_data import summarize
+from backend.capture.data import summarize
+from backend.capture.manager import Capture
 
 
 @unittest.skipUnless(os.environ.get("RUN_ROS_CAPTURE_TESTS") == "1", "requires sourced ROS")

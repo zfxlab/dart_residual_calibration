@@ -1,4 +1,4 @@
-"""Bounded capture owned by a browser session, independent of Streamlit reruns."""
+"""Bounded ROS capture owned by the local workbench service."""
 
 import atexit
 import json
@@ -9,11 +9,11 @@ import time
 from collections import deque
 from pathlib import Path
 
-from topic_data import assign_segment
+from .data import assign_segment
 
 
 class Capture:
-    def __init__(self, topic, duration, limit, *, preview=False):
+    def __init__(self, topic, duration, limit, *, preview=False, message_type=None):
         self.topic = topic
         self.duration = duration
         self.limit = limit
@@ -28,7 +28,7 @@ class Capture:
             [
                 os.environ.get("DART_ROS_PYTHON", "/usr/bin/python3"),
                 "-u",
-                str(Path(__file__).with_name("ros_capture.py")),
+                str(Path(__file__).with_name("worker.py")),
                 "--topic",
                 topic,
                 "--duration",
@@ -36,7 +36,8 @@ class Capture:
                 "--limit",
                 str(limit),
             ]
-            + (["--preview"] if preview else []),
+            + (["--preview"] if preview else [])
+            + (["--message-type", message_type] if message_type else []),
             stdout=subprocess.PIPE,
             stderr=subprocess.STDOUT,
             text=True,
