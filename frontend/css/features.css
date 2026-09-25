@@ -144,3 +144,36 @@ td.editable:focus { outline: 2px solid #26988e; outline-offset: -2px; }
 .excluded-row td { background: #f1f2f3; color: #89919a; }
 .focused-row { outline: 2px solid #26988e; outline-offset: -2px; }
 #point-details { overflow-wrap: anywhere; }
+
+.toolbar, .header-actions { flex-wrap: wrap; gap: 12px; }
+.toolbar .button, .summary-save-bar .button, .capture-reference-row .button { min-height: 36px; }
+.hint { font-size: 12px; }
+.inline-help { margin: 12px 0 16px; font-size: 12px; color: #687786; line-height: 1.7; }
+.inline-help summary { cursor: pointer; width: fit-content; padding: 4px 0; }
+.inline-help summary:focus-visible { outline: 2px solid #26988e; outline-offset: 3px; }
+.inline-help p { margin: 10px 0 0; font-size: 12px; overflow-wrap: anywhere; }
+.capture-help { margin: 16px 20px; }
+.summary-body { display: grid; gap: 24px; padding: 24px; }
+.summary-group { display: grid; gap: 16px; min-width: 0; }
+.summary-group label { margin: 0; }
+.summary-group .two { gap: 16px; }
+.summary-group .inline-help { margin: 0; }
+.summary-group h3 { margin: 0; }
+.summary-save-bar { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 16px; border-top: 1px solid #e8edf0; padding-top: 20px; }
+.summary-save-bar .hint { margin: 0; overflow-wrap: anywhere; min-width: 0; }
+.reference-head, .capture-reference-row { display: grid; grid-template-columns: minmax(0, 2fr) minmax(0, 1fr) minmax(0, 1fr) 64px; gap: 12px; align-items: center; }
+.reference-head { font-size: 12px; color: #687786; margin-bottom: -8px; }
+#capture-reference-list { display: grid; gap: 12px; min-width: 0; }
+.capture-reference-row label { position: relative; min-width: 0; margin: 0; }
+.capture-reference-row input { margin: 0; min-height: 36px; }
+.reference-label { position: absolute; width: 1px; height: 1px; padding: 0; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
+@media(max-width: 700px) {
+  .summary-body { padding: 20px 16px; }
+  .reference-head { display: none; }
+  .capture-reference-row { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); align-items: end; }
+  .reference-label { position: static; width: auto; height: auto; clip-path: none; white-space: normal; }
+  .capture-reference-row input { margin-top: 6px; }
+  .summary-save-bar { align-items: stretch; flex-direction: column; }
+  .summary-save-bar .button { align-self: flex-end; }
+  .card-heading { flex-wrap: wrap; }
+}

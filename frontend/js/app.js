@@ -39,6 +39,7 @@ function render(reset = false) {
   const d = current(), fields = numberFields(d);
   $("datasets").innerHTML = state.datasets.map(item => `<div class="dataset-row"><button class="dataset ${item.id === state.active ? "active" : ""}" data-id="${esc(item.id)}">▤ &nbsp;${esc(item.name)}<small>${item.rows.length.toLocaleString()} 条记录 · ${item.columns.length} 字段</small></button><button class="dataset-delete" data-delete-id="${esc(item.id)}" title="删除 ${esc(item.name)}" aria-label="删除 ${esc(item.name)}">×</button></div>`).join("");
   renderProject();
+  $("capture-summary-target").textContent = current() ? "保存到：" + current().name : "保存时新建：采集汇总记录";
   $("dataset-count").textContent = state.datasets.length;
   if (reset) {
     setOptions("x-field", fields, d?.x || fields[0]); setOptions("y-field", fields, d?.y || fields[1] || fields[0]);
@@ -122,7 +123,7 @@ function drawLive() {
   const rows = captureData.samples.slice(-2000), fields = numberFields({ columns: Object.keys(rows.at(-1)), rows });
   setOptions("live-field", fields, $("live-field").value || fields.find(c => c !== "elapsed_s") || fields[0]);
   const field = $("live-field").value;
-  Plotly.react("live-chart", [{ x: rows.map(r => r.elapsed_s), y: rows.map(r => numeric(r[field]) ? Number(r[field]) : null), type: "scatter", mode: "lines", connectgaps: false, line: { color: "#26988e", width: 1.5 } }], { ...chartLayout, dragmode: "zoom", uirevision: field, xaxis: { title: { text: "接收时间 / s" } }, yaxis: { title: { text: field } } }, { responsive: true, displaylogo: false });
+  Plotly.react("live-chart", [{ x: rows.map(r => r.elapsed_s), y: rows.map(r => numeric(r[field]) ? Number(r[field]) : null), type: "scatter", mode: "lines", connectgaps: false, line: { color: "#26988e", width: 1.5 } }], { ...chartLayout, dragmode: "zoom", uirevision: field, margin: {l: 100, r: 30, t: 25, b: 60}, xaxis: { title: { text: "接收时间 / s" }, automargin: true }, yaxis: { title: { text: field, standoff: 24 }, automargin: true, tickformat: ".5~g" } }, { responsive: true, displaylogo: false });
 }
 $("live-field").onchange = drawLive;
 async function pollCapture() {
@@ -177,7 +178,7 @@ $("table").onkeydown = event => {
 };
 $("fit").onclick = runFit;
 $("export-model").onclick = () => { if (fitResult) download("fitted-model.json", JSON.stringify({ ...fitResult, dataset: current().name, created_at: new Date().toISOString() }, null, 2), "application/json"); };
-$("start-capture").onclick = async () => { try { if (captureData?.samples.length && !confirm("开始新采集将替换服务中的上次采集缓存。已保存的数据集会保留。继续？")) return; await api("/api/capture/start", { topic: $("topic").value, message_type: $("message-type").value, duration: Number($("duration").value), limit: Number($("limit").value) }); await pollCapture(); } catch (error) { notify(error.message, true); } };
+$("start-capture").onclick = async () => { try { await api("/api/capture/start", { topic: $("topic").value, message_type: $("message-type").value, duration: Number($("duration").value), limit: Number($("limit").value) }); await pollCapture(); } catch (error) { notify(error.message, true); } };
 $("stop-capture").onclick = async () => { try { await api("/api/capture/stop", {}); await pollCapture(); } catch (error) { notify(error.message, true); } };
 $("keep-capture").onclick = () => { if (!captureData?.samples.length || capturing) return; const rows = structuredClone(captureData.samples); addDataset(`采集 ${new Date().toLocaleTimeString()}`, [...new Set(rows.flatMap(Object.keys))], rows, `ROS · ${captureData.topic}`); notify("采集已保存为数据集。可查看记录并排除不需要参与分析的数据点。"); setView("explore"); };
 try { const cached = localStorage.getItem(KEY); if (cached) { const parsed = JSON.parse(cached); if (parsed.version === 1 && Array.isArray(parsed.datasets)) state = parsed; } } catch { notify("无法恢复浏览器缓存，可导入已保存的项目。", true); }

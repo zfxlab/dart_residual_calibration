@@ -176,6 +176,7 @@ async function smokeRun() {
       await api('/test/capture', {id,rows,running});
       await pollCapture();
     }
+    const chosenDataset=addDataset('当前工况表',['manual_note'],[],'手工记录');
     setView('capture');
     await fixture('capture-zero',[
       {temperature:0,pressure:2,status:1}, {temperature:2,pressure:4,status:1},
@@ -183,26 +184,46 @@ async function smokeRun() {
     ],true);
     if(!$('calculate-capture-summary').disabled||$('capture-summary-panel').hidden)throw Error('Running summary UI invalid');
     await fixture('capture-zero',captureData.samples);
-    if($('capture-summary-x')||$('capture-summary-z'))throw Error('Direction-specific controls remain');
+    if($('capture-summary-mode')||$('capture-summary-x')||$('capture-summary-z'))throw Error('Direction-specific controls remain');
     for(const o of $('capture-summary-fields').options)o.selected=['temperature','pressure'].includes(o.value);
     $('capture-summary-fields').dispatchEvent(new Event('change'));
     $('capture-summary-valid').value='status';$('capture-summary-valid').dispatchEvent(new Event('change'));
     await calculateCaptureSummary();
     let temp=captureSummary.statistics.find(s=>s.field==='temperature');
     if(temp.mean!==1||temp.count!==2||temp.min!==0)throw Error('Generic statistics wrong');
-    $('capture-summary-name').value='工况 A';$('capture-summary-reference').value='0';
-    $('capture-summary-reference-name').value='temperature_ref';
+    const referenceRow = name => Array.from($('capture-reference-list').children).find(row=>row.querySelector('.reference-name').value===name);
+    const setReference = (name,value) => referenceRow(name).querySelector('.reference-value').value=String(value);
+    $('generate-capture-references').click();$('generate-capture-references').click();
+    if($('capture-reference-list').children.length!==2)throw Error('Generated duplicate reference fields');
+    $('capture-summary-name').value='工况 A';setReference('temperature_ref',0);setReference('pressure_ref',101);
+    referenceRow('temperature_ref').querySelector('.reference-unit').value='°C';
+    referenceRow('temperature_ref').querySelector('.reference-unit').dispatchEvent(new Event('input',{bubbles:true}));
+    const pressureName=referenceRow('pressure_ref').querySelector('.reference-name');
+    pressureName.value='temperature_ref';await saveCaptureSummary();
+    if(chosenDataset.rows.length)throw Error('Duplicate reference names saved');
+    pressureName.value='pressure_mean';await saveCaptureSummary();
+    if(chosenDataset.rows.length)throw Error('Reference overwrote statistics');
+    pressureName.value='pressure_ref';
+    $('add-capture-reference').click();
+    const custom=$('capture-reference-list').lastElementChild;
+    custom.querySelector('.reference-name').value='yaw_ref_deg';custom.querySelector('.reference-unit').value='deg';
+    custom.querySelector('.reference-name').dispatchEvent(new Event('input',{bubbles:true}));
+    $('add-capture-reference').click();$('capture-reference-list').lastElementChild.querySelector('.remove-reference').click();
+    if($('capture-reference-list').children.length!==3)throw Error('Reference deletion failed');
     await saveCaptureSummary();
-    const summaryDataset=state.datasets.find(d=>d.kind==='capture_statistics_summary');
-    if(summaryDataset.rows[0].temperature_mean!==1||summaryDataset.rows[0].temperature_ref!==0)throw Error('Generic record not saved');
+    const summaryDataset=current();
+    if(summaryDataset!==chosenDataset)throw Error('Summary not appended to selected dataset');
+    if(Object.keys(summaryDataset.rows[0]).some(k=>['capture_id','created_at','topic','summary_key','sample_mode','valid_field','total_count'].includes(k)))throw Error('Summary metadata leaked into record');
+    if(summaryDataset.rows[0].temperature_mean!==1||summaryDataset.rows[0].temperature_ref!==0||summaryDataset.rows[0].pressure_ref!==101||summaryDataset.rows[0].yaw_ref_deg!==null||summaryDataset.column_units.temperature_ref!=='°C')throw Error('Generic record not saved');
     await saveCaptureSummary();
     if(summaryDataset.rows.length!==1)throw Error('Duplicate summary saved');
-    $('capture-summary-mode').value='paired';$('capture-summary-mode').dispatchEvent(new Event('change'));
-    if(captureSummary||!$('save-capture-summary').disabled)throw Error('Mode change retained old summary');
-    await calculateCaptureSummary();
-    if(captureSummary.statistics.some(s=>s.count!==2))throw Error('Paired sample counts differ');
+    $('capture-summary-value').value='0';$('capture-summary-value').dispatchEvent(new Event('change'));
+    if(captureSummary||!$('save-capture-summary').disabled)throw Error('Changed condition retained old result');
+    $('capture-summary-value').value='1';$('capture-summary-value').dispatchEvent(new Event('change'));
     await fixture('capture-invalid',[{temperature:null,pressure:null,status:1}]);
     if(captureSummary)throw Error('New capture retained old result');
+    if(Array.from($('capture-reference-list').querySelectorAll('.reference-value')).some(input=>input.value!==''))throw Error('New capture retained reference values');
+    if(!referenceRow('pressure_ref')||referenceRow('temperature_ref').querySelector('.reference-unit').value!=='°C')throw Error('New capture lost reference configuration');
     await calculateCaptureSummary();
     if(captureSummary.statistics.some(s=>s.mean!==null))throw Error('Invalid values not null');
     $('capture-summary-name').value='空数据';await saveCaptureSummary();
@@ -210,15 +231,35 @@ async function smokeRun() {
     for(const value of [10,20,30,40]) {
       await fixture('capture-'+value,[{temperature:value,pressure:value*3,status:1}]);
       await calculateCaptureSummary();
-      $('capture-summary-name').value='工况 '+value;$('capture-summary-reference').value=String(value*2+1);
+      $('capture-summary-name').value='工况 '+value;setReference('temperature_ref',value*2+1);setReference('pressure_ref',value*3+1);
       await saveCaptureSummary();
     }
     const restored=JSON.parse(localStorage.getItem(KEY)).datasets.find(d=>d.id===summaryDataset.id);
-    if(restored.rows.length!==6||restored.rows[1].temperature_mean!==null)throw Error('Summary persistence broken');
+    if(restored.rows.length!==6||restored.rows[1].temperature_mean!==null||restored.rows[1].pressure_ref!==null||restored.rows[5].pressure_ref!==121)throw Error('Summary persistence broken');
+    const savedReferenceConfig=JSON.parse(localStorage.getItem(KEY)).captureReferenceFields;
+    if(savedReferenceConfig.length!==3||savedReferenceConfig.some(item=>Object.hasOwn(item,'value')))throw Error('Reference configuration persistence incorrect');
     state.active=summaryDataset.id;render(true);setView('fit');
     $('fit-x').value='temperature_mean';$('fit-y').value='temperature_ref';$('validation').value='0';$('model').value='linear';
     await identifyParameters();await runFit();
     if(!fitResult||fitResult.train.count!==5||fitResult.skipped!==1)throw Error('Summary cannot fit or empty row not skipped');
+    setView('capture');await pollCapture();
+    $('live-field').value='temperature';drawLive();
+    await smokeWait(()=>$('live-chart').querySelector('.ytitle'));
+    const titleBox=$('live-chart').querySelector('.ytitle').getBoundingClientRect();
+    const tickBoxes=Array.from($('live-chart').querySelectorAll('.ytick text'),t=>t.getBoundingClientRect());
+    if(tickBoxes.some(b=>titleBox.right>b.left-2))throw Error('Live Y title overlaps tick labels');
+    const otherTarget=addDataset('另一个工况表',['note'],[],'test');
+    await saveCaptureSummary();
+    if(otherTarget.rows.length!==1||summaryDataset.rows.length!==6)throw Error('Saving ignored changed active dataset');
+    state.active=null;render();
+    await saveCaptureSummary();
+    if(current()?.name!=='采集汇总记录'||current().rows.length!==1)throw Error('Empty workspace summary fallback failed');
+    const realApi=api,realConfirm=window.confirm;let starts=0;
+    window.confirm=()=>{throw Error('Unexpected new capture confirmation')};
+    api=async(path,body)=>path==='/api/capture/start'?(starts++,{ok:true}):realApi(path,body);
+    await $('start-capture').onclick();
+    api=realApi;window.confirm=realConfirm;
+    if(starts!==1)throw Error('New capture did not start directly');
     document.body.dataset.smoke='passed';
   } catch(error) {document.body.dataset.smoke='failed: '+error.stack;}
 }

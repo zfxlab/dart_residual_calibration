@@ -157,7 +157,7 @@ async function runFit() {
 function setupFeatures() {
   $("fit-inspector").prepend($("model-panel"));
   $("fit-main").insertBefore($("fit-result"), $("comparison-panel"));
-  $("fit-result").insertAdjacentHTML("beforeend", '<p id="fit-warnings" class="hint"></p><div id="parameter-results" class="table-scroll"></div><p class="hint">95% 区间采用局部线性近似；稳健拟合、参数触及边界或不可识别时不提供。</p>');
+  $("fit-result").insertAdjacentHTML("beforeend", '<p id="fit-warnings" class="hint"></p><div id="parameter-results" class="table-scroll"></div>');
   $("formula").insertAdjacentHTML("afterend", '<div id="fit-chart" style="height:360px"></div>');
   $("point-toggle").onclick = () => { if (activePoint?.id === current()?.id) togglePoint(activePoint.index); };
   $("point-locate").onclick = () => {

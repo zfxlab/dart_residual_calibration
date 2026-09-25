@@ -69,7 +69,7 @@
       <div class="toolbar"><button id="start-capture" class="button primary">● 开始采集</button><button id="stop-capture"
           class="button" disabled>停止</button><button id="keep-capture" class="button">保存为数据集</button><span
           id="capture-count" class="muted">0 条消息</span></div>
-      <p class="hint">启动前加载 ROS 与消息工作区。展开嵌套标量字段；数组暂不采集。保存数据集后可编辑、绘图和拟合。</p>
+      <details class="inline-help capture-help"><summary>采集说明</summary><p>启动前加载 ROS 与消息工作区。展开嵌套标量字段；数组暂不采集。保存数据集后可编辑、绘图和拟合。</p></details>
       <pre id="capture-log"></pre>
     </section>
     <section id="live-panel" class="card" hidden>
@@ -83,17 +83,24 @@
     </section>
     <section id="capture-summary-panel" class="card" hidden>
       <div class="card-heading"><div><h2>本次采集汇总</h2><p>停止采集后，将整个工况保存为一条统计记录</p></div></div>
-      <div class="control-body">
+      <div class="control-body summary-body">
+        <div class="summary-group">
         <label>统计字段（按 Ctrl / Cmd 多选）<select id="capture-summary-fields" multiple size="6"></select></label>
-        <label>缺失值处理<select id="capture-summary-mode"><option value="independent">各字段独立统计有效值</option><option value="paired">仅统计所选字段全部有效的记录</option></select></label>
         <div class="two"><label>有效条件字段<select id="capture-summary-valid"></select></label><label>等于<input id="capture-summary-value" value="1"></label></div>
-        <p class="hint">对满足条件的记录计算各字段的有效数、均值、样本标准差、最小值和最大值。零是有效数值；无有效值时统计量为空，只有一条时标准差为空。多列联合计算时，可选择使用同一组完整记录。</p>
+        <details class="inline-help"><summary>统计说明</summary><p>对满足条件的记录，逐列统计有效数、均值、样本标准差、最小值和最大值。零正常参与；各列自动忽略缺失值，无有效值时统计量为空，只有一条时标准差为空。</p></details>
         <div class="toolbar"><button id="calculate-capture-summary" class="button">计算本次汇总</button><span id="capture-summary-status" class="muted">等待采集数据</span></div>
+        </div>
         <div id="capture-summary-result" class="table-scroll" hidden></div>
-        <div class="two"><label>工况 / 记录名称<input id="capture-summary-name" placeholder="例如：位置 A · 第一次"></label><label>参考值（可留空）<input id="capture-summary-reference" type="number" step="any" placeholder="实测参考值"></label></div>
-        <label>参考值字段名（可自定义或留空）<input id="capture-summary-reference-name" value="reference_value" placeholder="例如 temperature_ref"></label>
+        <div class="summary-group">
+        <label>工况 / 记录名称<input id="capture-summary-name" placeholder="例如：位置 A · 第一次"></label>
+        <div class="toolbar"><h3>参考字段</h3><button id="add-capture-reference" class="button small">＋ 添加</button><button id="generate-capture-references" class="button small">生成参考字段</button></div>
+        <div class="reference-head" aria-hidden="true"><span>字段名</span><span>参考值</span><span>单位</span><span></span></div>
+        <div id="capture-reference-list"></div>
+        </div>
+        <div class="summary-save-bar">
+        <p id="capture-summary-target" class="hint"></p>
         <button id="save-capture-summary" class="button primary" disabled>保存汇总记录</button>
-        <p class="hint">追加到“采集汇总记录”数据集，统计列按“原字段名_mean / std / min / max / count / missing_count”命名，可继续添加派生列并拟合。原始帧请另点“保存为数据集”。</p>
+        </div>
       </div>
     </section>
     <section id="data-page" class="workspace">
@@ -155,7 +162,8 @@
             <label>列名<input id="derived-name" placeholder="error"></label>
             <label>表达式<input id="derived-expression" placeholder="[reference] - [measured]"></label>
             <label>单位（仅标签）<input id="derived-unit" placeholder="m"></label>
-            <p class="hint">列名用 [ ] 包裹；支持 + − * / **、sin/cos/exp/log/sqrt/abs、atan2(a, b)。空值和定义域错误产生空值。点击已有派生列可修改公式。</p>
+            <p class="hint">使用 [列名] 引用字段。</p>
+            <details class="inline-help"><summary>表达式帮助</summary><p>支持 + − * / **、sin/cos/tan/exp/log/ln/sqrt/abs、atan2(a, b)。空值和定义域错误产生空值。点击已有派生列可修改公式；单位仅作标签，不自动换算。</p></details>
             <button id="save-derived" class="button primary wide">保存派生列</button>
             <div id="derived-list"></div>
           </div>
@@ -210,7 +218,12 @@
                 <option value="soft_l1">Soft-L1 稳健拟合</option>
               </select></label>
             <label>稳健尺度<input id="fit-scale" type="number" min="0.000001" value="1" step="any"></label>
-            <p class="hint">各模型在原始 Y 空间优化。权重作用于平方残差；空值及非正权重不参与拟合。按批次划分时，整个批次留出。</p><button id="fit"
+            <details class="inline-help"><summary>拟合说明</summary>
+              <p>使用当前数据集的全部未排除记录。列运算和单位换算请先在数据探索页生成派生列。</p>
+              <p>各模型在原始 Y 空间优化；权重作用于平方残差，空值及非正权重不参与拟合。Huber / Soft-L1 降低大残差的影响，稳健尺度控制其作用范围。按批次划分时，整个批次留出。</p>
+              <p>95% 参数区间采用局部线性近似；稳健拟合、参数触及边界或不可识别时不提供。</p>
+              <p>模型比较使用同一组未排除记录、划分、权重和损失，独立估计参数，不自动替换当前模型。</p>
+            </details><button id="fit"
               class="button primary wide">执行拟合
               <span>↗</span></button>
           </div>
@@ -225,16 +238,13 @@
             <h2>拟合数据与变量</h2><span id="fit-dataset-label" class="badge"></span>
           </div>
           <div class="control-body">
-            <p class="hint">使用当前数据集的全部未排除记录；排除状态在数据探索页管理。</p>
             <div class="two"><label>X 数据列<select id="fit-x"></select></label><label>Y 数据列<select id="fit-y"></select></label></div>
             <div class="toolbar"><button id="back-data" class="button small">← 编辑数据 / 派生列</button></div>
-            <p class="hint">直接选择数据探索页的原始列或派生列。需要加减、单位换算等操作时，请先在数据探索页生成派生列。</p>
           </div>
         </article>
         <article id="fit-placeholder" class="card">
           <div class="control-body">
             <h2>选择变量与函数，然后执行拟合</h2>
-            <p>当前页面独立保存拟合配置；切换到采集或数据探索后再回来可继续操作。</p>
           </div>
         </article>
         <article id="comparison-panel" class="card">
@@ -242,7 +252,6 @@
             <h2>模型比较</h2><button id="compare-models" class="button small">比较七种基础模型</button>
           </div>
           <div id="comparison-table" class="table-scroll"></div>
-          <p class="hint">各模型使用同一组未排除记录、划分、权重和损失；独立估计参数，不自动替换当前模型。</p>
         </article>
       </div>
       <aside id="fit-inspector" class="inspector"></aside>
