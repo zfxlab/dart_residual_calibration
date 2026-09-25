@@ -15,6 +15,7 @@ from plotly.offline import get_plotlyjs
 from .analysis.expressions import derive
 from .analysis.fitting import describe_model, fit_data
 from .capture.manager import Capture
+from .capture.summary import summarize_capture
 
 ROOT = Path(__file__).resolve().parents[1] / "frontend"
 MAX_ROWS = 100000
@@ -45,13 +46,14 @@ class Handler(BaseHTTPRequestHandler):
                 if not capture:
                     return self.reply({"running": False, "samples": [], "logs": []})
                 samples, logs, _ = capture.snapshot()
-                return self.reply({"running": capture.running, "samples": samples, "logs": logs, "topic": capture.topic})
+                return self.reply({"capture_id": capture.id, "running": capture.running, "samples": samples, "logs": logs, "topic": capture.topic})
         if path == "/plotly.js":
             if type(self).plotly is None:
                 type(self).plotly = get_plotlyjs().encode()
             return self.reply(type(self).plotly, mime="text/javascript; charset=utf-8")
         assets = {"/": ("index.html", "text/html"), "/app.js": ("js/app.js", "text/javascript"),
                   "/features.js": ("js/features.js", "text/javascript"), "/project.js": ("js/project.js", "text/javascript"),
+                  "/capture-summary.js": ("js/capture-summary.js", "text/javascript"),
                   "/style.css": ("css/style.css", "text/css"), "/features.css": ("css/features.css", "text/css")}
         if path in assets:
             name, mime = assets[path]
@@ -70,6 +72,17 @@ class Handler(BaseHTTPRequestHandler):
             if not 0 < length <= MAX_BODY:
                 raise ValueError("请求为空或超过 32 MB。")
             payload = json.loads(self.rfile.read(length))
+            if self.path == "/api/capture/summary":
+                with self.capture_lock:
+                    capture = type(self).capture
+                    if not capture or capture.running:
+                        raise ValueError("请先停止采集后再计算汇总。")
+                    if payload.get("capture_id") != capture.id:
+                        raise ValueError("采集已变化，请重新计算。")
+                    samples, _, _ = capture.snapshot()
+                    capture_id, topic = capture.id, capture.topic
+                result = summarize_capture(samples, payload)
+                return self.reply({**result, "capture_id": capture_id, "topic": topic})
             if self.path == "/api/fit":
                 return self.reply(fit_data(payload))
             if self.path == "/api/derive":

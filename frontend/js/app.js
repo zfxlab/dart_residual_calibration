@@ -109,6 +109,7 @@ function setView(name) {
   $("subtitle").textContent = { explore: "导入、观察、编辑与拟合，在同一个工作空间完成。", fit: "自由选择变量与函数，以残差和独立验证评估拟合效果。", capture: "连接 ROS 2 话题，采集完成后保存为可分析的数据集。" }[name];
   $("capture-panel").hidden = name !== "capture";
   $("live-panel").hidden = name !== "capture";
+  $("capture-summary-panel").hidden = name !== "capture";
   $("data-page").hidden = name !== "explore"; $("fit-page").hidden = name !== "fit";
   document.querySelector(".stats").hidden = name === "capture";
   $("rename").hidden = name === "capture"; $("export-csv").hidden = name === "capture";
@@ -128,6 +129,7 @@ async function pollCapture() {
   if (pollBusy) return; pollBusy = true;
   try {
     captureData = await api("/api/capture"); capturing = captureData.running; $("capture-state").textContent = capturing ? "正在记录" : captureData.samples.length ? "已停止" : "未连接";
+    syncCaptureSummary();
     $("capture-count").textContent = `${captureData.samples.length.toLocaleString()} 条消息`; $("start-capture").disabled = capturing; $("stop-capture").disabled = !capturing; $("keep-capture").disabled = capturing || !captureData.samples.length;
     $("capture-dot").className = capturing ? "live" : ""; $("capture-log").textContent = captureData.logs.join("\n");
     if (capturing && !captureData.samples.length && !captureData.logs.length) $("capture-log").textContent = "等待消息，请确认发布节点、ROS_DOMAIN_ID 与话题类型。";
@@ -179,4 +181,4 @@ $("start-capture").onclick = async () => { try { if (captureData?.samples.length
 $("stop-capture").onclick = async () => { try { await api("/api/capture/stop", {}); await pollCapture(); } catch (error) { notify(error.message, true); } };
 $("keep-capture").onclick = () => { if (!captureData?.samples.length || capturing) return; const rows = structuredClone(captureData.samples); addDataset(`采集 ${new Date().toLocaleTimeString()}`, [...new Set(rows.flatMap(Object.keys))], rows, `ROS · ${captureData.topic}`); notify("采集已保存为数据集。可查看记录并排除不需要参与分析的数据点。"); setView("explore"); };
 try { const cached = localStorage.getItem(KEY); if (cached) { const parsed = JSON.parse(cached); if (parsed.version === 1 && Array.isArray(parsed.datasets)) state = parsed; } } catch { notify("无法恢复浏览器缓存，可导入已保存的项目。", true); }
-setupProject(); setupFeatures(); render(true); setView(location.hash.slice(2) || "explore"); pollCapture(); setInterval(() => { if (capturing || view === "capture") pollCapture(); }, 1500);
+setupProject(); setupFeatures(); setupCaptureSummary(); render(true); setView(location.hash.slice(2) || "explore"); pollCapture(); setInterval(() => { if (capturing || view === "capture") pollCapture(); }, 1500);

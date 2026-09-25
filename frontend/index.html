@@ -10,6 +10,7 @@
   <script src="/plotly.js" defer></script>
   <script src="/project.js" defer></script>
   <script src="/features.js" defer></script>
+  <script src="/capture-summary.js" defer></script>
   <script src="/app.js" defer></script>
 </head>
 
@@ -80,6 +81,21 @@
       </div>
       <div id="live-chart" style="height:280px"></div>
     </section>
+    <section id="capture-summary-panel" class="card" hidden>
+      <div class="card-heading"><div><h2>本次采集汇总</h2><p>停止采集后，将整个工况保存为一条统计记录</p></div></div>
+      <div class="control-body">
+        <label>统计字段（按 Ctrl / Cmd 多选）<select id="capture-summary-fields" multiple size="6"></select></label>
+        <label>缺失值处理<select id="capture-summary-mode"><option value="independent">各字段独立统计有效值</option><option value="paired">仅统计所选字段全部有效的记录</option></select></label>
+        <div class="two"><label>有效条件字段<select id="capture-summary-valid"></select></label><label>等于<input id="capture-summary-value" value="1"></label></div>
+        <p class="hint">对满足条件的记录计算各字段的有效数、均值、样本标准差、最小值和最大值。零是有效数值；无有效值时统计量为空，只有一条时标准差为空。多列联合计算时，可选择使用同一组完整记录。</p>
+        <div class="toolbar"><button id="calculate-capture-summary" class="button">计算本次汇总</button><span id="capture-summary-status" class="muted">等待采集数据</span></div>
+        <div id="capture-summary-result" class="table-scroll" hidden></div>
+        <div class="two"><label>工况 / 记录名称<input id="capture-summary-name" placeholder="例如：位置 A · 第一次"></label><label>参考值（可留空）<input id="capture-summary-reference" type="number" step="any" placeholder="实测参考值"></label></div>
+        <label>参考值字段名（可自定义或留空）<input id="capture-summary-reference-name" value="reference_value" placeholder="例如 temperature_ref"></label>
+        <button id="save-capture-summary" class="button primary" disabled>保存汇总记录</button>
+        <p class="hint">追加到“采集汇总记录”数据集，统计列按“原字段名_mean / std / min / max / count / missing_count”命名，可继续添加派生列并拟合。原始帧请另点“保存为数据集”。</p>
+      </div>
+    </section>
     <section id="data-page" class="workspace">
       <div class="visual-column">
         <article class="card table-card">
@@ -139,7 +155,7 @@
             <label>列名<input id="derived-name" placeholder="error"></label>
             <label>表达式<input id="derived-expression" placeholder="[reference] - [measured]"></label>
             <label>单位（仅标签）<input id="derived-unit" placeholder="m"></label>
-            <p class="hint">列名用 [ ] 包裹；支持 + − * / **、sin/cos/exp/log/sqrt/abs。空值和定义域错误产生空值。点击已有派生列可修改公式。</p>
+            <p class="hint">列名用 [ ] 包裹；支持 + − * / **、sin/cos/exp/log/sqrt/abs、atan2(a, b)。空值和定义域错误产生空值。点击已有派生列可修改公式。</p>
             <button id="save-derived" class="button primary wide">保存派生列</button>
             <div id="derived-list"></div>
           </div>

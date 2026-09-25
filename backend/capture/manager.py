@@ -6,6 +6,7 @@ import os
 import subprocess
 import threading
 import time
+import uuid
 from collections import deque
 from pathlib import Path
 
@@ -14,6 +15,7 @@ from .data import assign_segment
 
 class Capture:
     def __init__(self, topic, duration, limit, *, preview=False, message_type=None):
+        self.id = str(uuid.uuid4())
         self.topic = topic
         self.duration = duration
         self.limit = limit

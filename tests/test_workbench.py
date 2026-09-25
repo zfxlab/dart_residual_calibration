@@ -5,6 +5,8 @@ import math
 import sys
 import threading
 import unittest
+from types import SimpleNamespace
+from unittest.mock import patch
 from pathlib import Path
 from urllib.error import HTTPError
 from urllib.request import Request, urlopen
@@ -82,3 +84,21 @@ class WorkbenchHttpTests(unittest.TestCase):
         with self.assertRaises(HTTPError) as error:
             self.post("/api/capture/stop", {}, "https://example.com")
         self.assertEqual(error.exception.code, 403)
+
+    def test_capture_summary_requires_stopped_matching_capture(self):
+        capture = SimpleNamespace(id="capture-test", topic="/ray", running=False,
+                                  snapshot=lambda: ([{"x": 0, "z": 1, "status": 1}], [], None))
+        payload = {"capture_id": capture.id, "fields": ["x", "z"], "valid_field": "status", "valid_value": "1"}
+        with patch.object(Handler, "capture", capture):
+            with self.post("/api/capture/summary", payload) as response:
+                result = json.load(response)
+                self.assertEqual(result["statistics"][0]["mean"], 0)
+                self.assertEqual(result["capture_id"], capture.id)
+            for bad in [{**payload, "capture_id": "previous"}, {**payload, "fields": ["missing"]}]:
+                with self.assertRaises(HTTPError) as error:
+                    self.post("/api/capture/summary", bad)
+                self.assertEqual(error.exception.code, 400)
+            capture.running = True
+            with self.assertRaises(HTTPError) as error:
+                self.post("/api/capture/summary", payload)
+            self.assertEqual(error.exception.code, 400)

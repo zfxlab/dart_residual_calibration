@@ -8,6 +8,7 @@ import threading
 import time
 import unittest
 from pathlib import Path
+from types import SimpleNamespace
 from urllib.request import urlopen
 
 from websockets.sync.client import connect
@@ -169,6 +170,55 @@ async function smokeRun() {
     const blankEditor=newCell.querySelector('input');blankEditor.value='42';blankEditor.dispatchEvent(new Event('blur'));
     await smokeWait(()=>probe.rows[0].x===42);
     if(JSON.parse(localStorage.getItem(KEY)).datasets.find(d=>d.id===probe.id).rows[0].x!==42)throw Error('Edited row not persisted');
+    // Stopped capture summaries use the real API but synthetic ROS-free samples.
+    async function fixture(id, rows, running=false) {
+      await smokeWait(()=>!pollBusy);
+      await api('/test/capture', {id,rows,running});
+      await pollCapture();
+    }
+    setView('capture');
+    await fixture('capture-zero',[
+      {temperature:0,pressure:2,status:1}, {temperature:2,pressure:4,status:1},
+      {temperature:999,pressure:8,status:0}, {temperature:null,pressure:6,status:1}
+    ],true);
+    if(!$('calculate-capture-summary').disabled||$('capture-summary-panel').hidden)throw Error('Running summary UI invalid');
+    await fixture('capture-zero',captureData.samples);
+    if($('capture-summary-x')||$('capture-summary-z'))throw Error('Direction-specific controls remain');
+    for(const o of $('capture-summary-fields').options)o.selected=['temperature','pressure'].includes(o.value);
+    $('capture-summary-fields').dispatchEvent(new Event('change'));
+    $('capture-summary-valid').value='status';$('capture-summary-valid').dispatchEvent(new Event('change'));
+    await calculateCaptureSummary();
+    let temp=captureSummary.statistics.find(s=>s.field==='temperature');
+    if(temp.mean!==1||temp.count!==2||temp.min!==0)throw Error('Generic statistics wrong');
+    $('capture-summary-name').value='工况 A';$('capture-summary-reference').value='0';
+    $('capture-summary-reference-name').value='temperature_ref';
+    await saveCaptureSummary();
+    const summaryDataset=state.datasets.find(d=>d.kind==='capture_statistics_summary');
+    if(summaryDataset.rows[0].temperature_mean!==1||summaryDataset.rows[0].temperature_ref!==0)throw Error('Generic record not saved');
+    await saveCaptureSummary();
+    if(summaryDataset.rows.length!==1)throw Error('Duplicate summary saved');
+    $('capture-summary-mode').value='paired';$('capture-summary-mode').dispatchEvent(new Event('change'));
+    if(captureSummary||!$('save-capture-summary').disabled)throw Error('Mode change retained old summary');
+    await calculateCaptureSummary();
+    if(captureSummary.statistics.some(s=>s.count!==2))throw Error('Paired sample counts differ');
+    await fixture('capture-invalid',[{temperature:null,pressure:null,status:1}]);
+    if(captureSummary)throw Error('New capture retained old result');
+    await calculateCaptureSummary();
+    if(captureSummary.statistics.some(s=>s.mean!==null))throw Error('Invalid values not null');
+    $('capture-summary-name').value='空数据';await saveCaptureSummary();
+    if(summaryDataset.rows.length!==2||summaryDataset.rows[1].temperature_mean!==null)throw Error('Null summary not saved');
+    for(const value of [10,20,30,40]) {
+      await fixture('capture-'+value,[{temperature:value,pressure:value*3,status:1}]);
+      await calculateCaptureSummary();
+      $('capture-summary-name').value='工况 '+value;$('capture-summary-reference').value=String(value*2+1);
+      await saveCaptureSummary();
+    }
+    const restored=JSON.parse(localStorage.getItem(KEY)).datasets.find(d=>d.id===summaryDataset.id);
+    if(restored.rows.length!==6||restored.rows[1].temperature_mean!==null)throw Error('Summary persistence broken');
+    state.active=summaryDataset.id;render(true);setView('fit');
+    $('fit-x').value='temperature_mean';$('fit-y').value='temperature_ref';$('validation').value='0';$('model').value='linear';
+    await identifyParameters();await runFit();
+    if(!fitResult||fitResult.train.count!==5||fitResult.skipped!==1)throw Error('Summary cannot fit or empty row not skipped');
     document.body.dataset.smoke='passed';
   } catch(error) {document.body.dataset.smoke='failed: '+error.stack;}
 }
@@ -177,6 +227,15 @@ smokeRun();
 
 
 class SmokeHandler(Handler):
+    def do_POST(self):
+        if self.path == "/test/capture":
+            fixture = json.loads(self.rfile.read(int(self.headers["Content-Length"])))
+            type(self).capture = SimpleNamespace(
+                id=fixture["id"], topic="/test/ray", running=fixture["running"],
+                snapshot=lambda: (fixture["rows"], [], None))
+            return self.reply({"ok": True})
+        return super().do_POST()
+
     def do_GET(self):
         if self.path == "/app.js":
             return self.reply((ROOT / "js" / "app.js").read_bytes() + SMOKE.encode(), mime="text/javascript")

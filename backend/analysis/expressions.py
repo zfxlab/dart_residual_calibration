@@ -9,8 +9,13 @@ import re
 
 import numpy as np
 
+def direction_atan2(y, x):
+    return np.where((y == 0) & (x == 0), np.nan, np.arctan2(y, x))
+
+
 FUNCTIONS = {"sin": np.sin, "cos": np.cos, "tan": np.tan, "exp": np.exp,
-             "log": np.log, "ln": np.log, "sqrt": np.sqrt, "abs": np.abs}
+             "log": np.log, "ln": np.log, "sqrt": np.sqrt, "abs": np.abs,
+             "atan2": direction_atan2}
 CONSTANTS = {"pi": np.pi, "e": np.e}
 BINARY = {ast.Add: operator.add, ast.Sub: operator.sub, ast.Mult: operator.mul,
           ast.Div: operator.truediv, ast.Pow: np.power}
@@ -57,10 +62,14 @@ class Expression:
         elif isinstance(node, ast.UnaryOp) and isinstance(node.op, (ast.UAdd, ast.USub)):
             self._validate(node.operand, depth + 1)
         elif (isinstance(node, ast.Call) and isinstance(node.func, ast.Name)
-              and node.func.id in FUNCTIONS and len(node.args) == 1 and not node.keywords):
-            self._validate(node.args[0], depth + 1)
+              and node.func.id in FUNCTIONS and not node.keywords):
+            arity = 2 if node.func.id == "atan2" else 1
+            if len(node.args) != arity:
+                raise ValueError(f"{node.func.id} 需要 {arity} 个参数。")
+            for argument in node.args:
+                self._validate(argument, depth + 1)
         else:
-            raise ValueError("仅允许加减乘除、**、括号，以及 sin/cos/tan/exp/log/sqrt/abs。")
+            raise ValueError("仅允许加减乘除、**、括号，以及 sin/cos/tan/exp/log/sqrt/abs/atan2。")
 
     def evaluate(self, variables):
         def visit(node):
@@ -72,7 +81,7 @@ class Expression:
                 return BINARY[type(node.op)](visit(node.left), visit(node.right))
             if isinstance(node, ast.UnaryOp):
                 return -visit(node.operand) if isinstance(node.op, ast.USub) else visit(node.operand)
-            return FUNCTIONS[node.func.id](visit(node.args[0]))
+            return FUNCTIONS[node.func.id](*(visit(arg) for arg in node.args))
         with np.errstate(all="ignore"):
             return np.asarray(visit(self.tree), dtype=float)
 
