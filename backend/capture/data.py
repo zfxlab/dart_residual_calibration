@@ -9,7 +9,6 @@ FIELDS = {
     "position.x": "m",
     "position.y": "m",
     "position.z": "m",
-    "ray_gap_m": "m",
 }
 
 
